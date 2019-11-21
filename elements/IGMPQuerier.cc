@@ -15,7 +15,7 @@ int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
     uint8_t qrv = 2;
 
 
-    if (Args(conf, this, errh).read_mp("SOURCE", _src).read("S", s).read("QRV", qrv).read("ID", _id).complete() < 0) return -1;
+    if (Args(conf, this, errh).read_mp("SOURCE", _src).read("S", s).read("QRV", qrv).complete() < 0) return -1;
 
     _s_qrv = ((s << 4) | qrv);
     _timer.initialize(this);
@@ -118,11 +118,8 @@ void IGMPQuerier::push(int, Packet* p) {
         // UDP
         // Check if interface is interested in this group
         // If yes, send to output
-        click_chatter("Router %d - Subbed groups: %d", _id, _multicast_state.size());
         for (int i = 0; i < _multicast_state.size(); i++) {
-            click_chatter("Checking state addr: %d", _multicast_state[i]);
             if (iph->ip_dst == _multicast_state[i]) {
-                click_chatter("Sending UDP Packet through.");
                 output(0).push(p);
                 return;
                 

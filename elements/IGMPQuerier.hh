@@ -29,7 +29,6 @@ class IGMPQuerier : public Element {
         uint8_t   _s_qrv;
         IPAddress _src;
         Vector<IPAddress> _multicast_state;
-	int _id; // Testing
 };
 
 
