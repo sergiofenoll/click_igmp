@@ -103,7 +103,7 @@ void IGMPResponder::push(int, Packet* p) {
     // General queries
     // TODO: make this timed
     Vector<igmp_group_record> records = Vector<igmp_group_record>();
-    if (igmph->igmp_group_address == IPAddress().addr() && igmph->igmp_num_sources == 0) {
+    if (igmph->igmp_group_address == 0 && igmph->igmp_num_sources == 0) {
             // Only send response if state is non-empty
             if (!_multicast_state.empty()) {
                 for (int i = 0; i < _multicast_state.size(); i++) {

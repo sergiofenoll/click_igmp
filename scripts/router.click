@@ -34,9 +34,9 @@ elementclass Router {
 	arpt :: Tee (3);
 	
 	// IGMP Support
-	igmp0 :: IGMPQuerier($server_address, ID 0);
-	igmp1 :: IGMPQuerier($client1_address, ID 1);
-	igmp2 :: IGMPQuerier($client2_address, ID 2);
+	igmp0 :: IGMPQuerier($server_address);
+	igmp1 :: IGMPQuerier($client1_address);
+	igmp2 :: IGMPQuerier($client2_address);
 	igmpt :: Tee(3);
 	igmpt[0] -> Strip(14) -> igmp0; // Ethernet header is stripped to prevent double header later on
 	igmpt[1] -> Strip(14) -> igmp1;

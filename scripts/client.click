@@ -13,7 +13,7 @@ elementclass Client {
 					$address:ip/32 0,
 					$address:ipnet 0,
 					0.0.0.0/0.0.0.0 $gateway 1)
-		-> igmp_class :: Classifier(23/02 38/11, -) // General/Group-specific query, non-igmp
+		-> igmp_class :: IPClassifier(ip proto igmp, -) // General/Group-specific query, non-igmp
 	
 	rt[1]
 		-> DropBroadcasts
@@ -33,10 +33,6 @@ elementclass Client {
 	igmp_class[1]
 		// Non-IGMP packets
 		-> [1]output;
-	
-	// igmp[1]
-	//	-> ...
-	// 	-> [0]output
 
 	ipgw[1] -> ICMPError($address, parameterproblem) -> output;
 	ttl[1]  -> ICMPError($address, timeexceeded) -> output;
