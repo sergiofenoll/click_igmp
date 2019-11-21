@@ -5,7 +5,9 @@
 
 CLICK_DECLS
 
-IGMPQuerier::IGMPQuerier(): _timer(this), _ctr(1), _s_qrv(0) {}
+IGMPQuerier::IGMPQuerier(): _timer(this), _ctr(1), _s_qrv(0) {
+    _multicast_state = Vector<IPAddress>();
+}
 IGMPQuerier::~IGMPQuerier() {}
 int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
 
@@ -13,7 +15,7 @@ int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
     uint8_t qrv = 2;
 
 
-    if (Args(conf, this, errh).read_mp("SOURCE", _src).read("S", s).read("QRV", qrv).complete() < 0) return -1;
+    if (Args(conf, this, errh).read_mp("SOURCE", _src).read("S", s).read("QRV", qrv).read("ID", _id).complete() < 0) return -1;
 
     _s_qrv = ((s << 4) | qrv);
     _timer.initialize(this);
@@ -71,14 +73,62 @@ Packet* IGMPQuerier::make_packet() {
 void IGMPQuerier::run_timer(Timer* t) {
 
     Packet* p = make_packet();
-    push(0, make_packet());
+    output(0).push(p);
     _timer.reschedule_after_msec(_interval);
 
 }
 
 void IGMPQuerier::push(int, Packet* p) {
-    _ctr++;
-    output(0).push(p);
+
+    WritablePacket* wp     = p->uniqueify();
+    click_ip* iph          = wp->ip_header();
+
+    // Split based on IP protocol (UDP or IGMP)
+    if (iph->ip_p == 2) {
+        // IGMP
+        IP_options* ipo         = (IP_options*) (iph + 1);
+        igmp_memb_report* igmph =  (igmp_memb_report*) (ipo + 1);
+
+        if (igmph->igmp_num_group_rec > 0) {
+            igmp_group_record* record = (igmp_group_record*) (igmph + 1);
+
+            for (int i = 0; i < igmph->igmp_num_group_rec; i++) {
+
+                uint8_t record_type     = record->igmp_record_type;
+                uint32_t multicast_addr = record->igmp_multicast_addr;
+
+                // Handle state changes
+                if (record_type == IGMP_CHANGE_TO_EXCLUDE_MODE) {
+
+                    // Don't duplicate groups
+                    for (int i = 0; i < _multicast_state.size(); i++) {
+                        if (multicast_addr == _multicast_state[i].addr()) {
+                            return; 
+                        }
+                    }
+
+                    // TODO: Timer-based actions
+                    _multicast_state.push_back(multicast_addr);
+                }
+
+                record++;
+            }
+        }        
+    } else if (iph->ip_p == 17) {
+        // UDP
+        // Check if interface is interested in this group
+        // If yes, send to output
+        click_chatter("Router %d - Subbed groups: %d", _id, _multicast_state.size());
+        for (int i = 0; i < _multicast_state.size(); i++) {
+            click_chatter("Checking state addr: %d", _multicast_state[i]);
+            if (iph->ip_dst == _multicast_state[i]) {
+                click_chatter("Sending UDP Packet through.");
+                output(0).push(p);
+                return;
+                
+            }
+        }
+    }
 }
 
 CLICK_ENDDECLS

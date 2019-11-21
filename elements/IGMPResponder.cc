@@ -106,7 +106,6 @@ void IGMPResponder::push(int, Packet* p) {
     if (igmph->igmp_group_address == IPAddress().addr() && igmph->igmp_num_sources == 0) {
             // Only send response if state is non-empty
             if (!_multicast_state.empty()) {
-                click_chatter("Multicast state not empty\n");
                 for (int i = 0; i < _multicast_state.size(); i++) {
                     igmp_group_record record;
                     record.igmp_record_type    = IGMP_MODE_IS_EXCLUDE;
@@ -114,7 +113,6 @@ void IGMPResponder::push(int, Packet* p) {
                     record.igmp_num_sources    = 0; // 0 because sources aren't supported by this implementation
                     record.igmp_multicast_addr = _multicast_state[i];
                     records.push_back(record);
-                    click_chatter("Added record: %d\n", records.size());
                 }
             }
     }
@@ -139,6 +137,7 @@ void IGMPResponder::push(int, Packet* p) {
     if (records.size() > 0) {
         Packet* response = make_packet(records);
         output(0).push(response);
+        _ctr++;
     }
 }
 

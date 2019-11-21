@@ -24,10 +24,12 @@ class IGMPQuerier : public Element {
     private:
 
         Timer     _timer;
-        uint      _interval = 2000;
+        uint      _interval = 5000;
         uint      _ctr;
         uint8_t   _s_qrv;
         IPAddress _src;
+        Vector<IPAddress> _multicast_state;
+	int _id; // Testing
 };
 
 
