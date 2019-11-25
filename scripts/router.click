@@ -1,3 +1,30 @@
+// IGMP element containing IGMP Querier and package routing
+// Input:
+//	[0]: All packets that could be destined for IGMPQuerier
+//
+// Output:
+//	[0]: IGMP queries destined for corresponding interface
+// 	[1]: UDP packets
+//	[2]: Non-IGMP packets meant to be routed elsewhere in the router
+elementclass IGMP {
+	$interface_address |
+
+	
+	//-> MarkIPHeader(14) // Necessary if we want to use IPClassifier)
+	input -> igmp_multicast_class :: IPClassifier(dst net 224.0.0.0/8, -)
+	      -> igmp_proto_class :: IPClassifier(ip proto igmp, ip proto udp, -)
+	      -> igmpq :: IGMPQuerier($interface_address);
+	      -> output;
+
+	igmp_multicast_class[1]
+			-> output[2];
+
+	igmp_proto_class[1]
+			-> output[1];
+
+	igmp_proto_class[2] -> Discard;
+}
+
 // Router with three interfaces
 // The input/output configuration is as follows:
 //
@@ -34,13 +61,16 @@ elementclass Router {
 	arpt :: Tee (3);
 	
 	// IGMP Support
-	igmp0 :: IGMPQuerier($server_address);
-	igmp1 :: IGMPQuerier($client1_address);
-	igmp2 :: IGMPQuerier($client2_address);
+	igmp0 :: IGMP($server_address);
+	igmp1 :: IGMP($client1_address);
+	igmp2 :: IGMP($client2_address);
 	igmpt :: Tee(3);
 	igmpt[0] -> Strip(14) -> igmp0; // Ethernet header is stripped to prevent double header later on
 	igmpt[1] -> Strip(14) -> igmp1;
 	igmpt[2] -> Strip(14) -> igmp2;
+
+	igmp0[1], igmp1[1], igmp2[1] -> igmpt;
+	igmp0[2], igmp1[2], igmp2[2] -> ip;
 
 	// Input and output paths for interface 0
 	input[0]
@@ -52,21 +82,9 @@ elementclass Router {
 	server_arpq :: ARPQuerier($server_address) -> output;
 	server_class[1] -> arpt[0] -> [1]server_arpq;
 	server_class[2] -> Paint(1)
-			//-> MarkIPHeader(14) // Necessary if we want to use IPClassifier?
-			-> igmp_multicast_class0 :: IPClassifier(dst net 224.0.0.0/8, -)
-			-> igmp_proto_class0 :: IPClassifier(ip proto igmp, ip proto udp, -)
 			-> igmp0
 			-> server_arpq
 			-> [0]output;
-
-	igmp_multicast_class0[1]
-			-> ip;
-
-	igmp_proto_class0[1]
-			-> igmpt;
-
-	igmp_proto_class0[2] -> Discard;
-
 
 	// Input and output paths for interface 1
 	input[1]
@@ -78,21 +96,9 @@ elementclass Router {
 	client1_arpq :: ARPQuerier($client1_address) -> [1]output;
 	client1_class[1] -> arpt[1] -> [1]client1_arpq;
 	client1_class[2] -> Paint(2) 
-			 //-> MarkIPHeader(14)
-			 -> igmp_multicast_class1 :: IPClassifier(dst net 224.0.0.0/8, -)
-			 -> igmp_proto_class1 :: IPClassifier(ip proto igmp, ip proto udp, -)
 			 -> igmp1
 			 -> client1_arpq
 			 -> [1]output;
-
-	igmp_multicast_class1[1]
-			 -> ip;
-
-	igmp_proto_class1[1]
-			-> igmpt;
-
-	igmp_proto_class1[2] -> Discard;
-
 
 	// Input and output paths for interface 2
 	input[2]
@@ -104,21 +110,9 @@ elementclass Router {
 	client2_arpq :: ARPQuerier($client2_address) -> [2]output;
 	client2_class[1] -> arpt[2] -> [1]client2_arpq;
 	client2_class[2] -> Paint(3)
-			 //-> MarkIPHeader(14)
-			 -> igmp_multicast_class2 :: IPClassifier(dst net 224.0.0.0/8, -)
-			 -> igmp_proto_class2 :: IPClassifier(ip proto igmp, ip proto udp, -)
-		     -> igmp2
+		     	 -> igmp2
 			 -> client2_arpq
 			 -> [2]output;
-
-	igmp_multicast_class2[1]
-			 -> ip;
-
-	igmp_proto_class2[1]
-			-> igmpt;
-
-	igmp_proto_class2[2] -> Discard;
-
 
 	// Local delivery
 	rt[0] -> [3]output
