@@ -9,11 +9,11 @@ elementclass Client {
 	ip :: Strip(14)
 		-> CheckIPHeader()
 		-> rt :: StaticIPLookup(
-					224.0.0.1 0,
 					$address:ip/32 0,
 					$address:ipnet 0,
-					0.0.0.0/0.0.0.0 $gateway 1)
-		-> igmp_class :: IPClassifier(ip proto igmp, -) // General/Group-specific query, non-igmp
+					0.0.0.0/0.0.0.0 $gateway 1,
+					224.0.0.0/8 2)
+		-> [1]output;
 	
 	rt[1]
 		-> DropBroadcasts
@@ -24,19 +24,24 @@ elementclass Client {
 		-> arpq :: ARPQuerier($address)
 		-> output;
 
-	igmp_class[0]
-		// IGMP Queries
-		-> igmp :: IGMPResponder($address)
-		-> arpq
-		-> [0]output; 
-
-	igmp_class[1]
-		// Non-IGMP packets
-		-> [1]output;
-
 	ipgw[1] -> ICMPError($address, parameterproblem) -> output;
 	ttl[1]  -> ICMPError($address, timeexceeded) -> output;
 	frag[1] -> ICMPError($address, unreachable, needfrag) -> output;
+
+	rt[2]
+		// Multicast packets
+		-> igmp_class :: IPClassifier(ip proto igmp or ip proto udp, -)
+		-> igmp :: IGMPResponder($address)
+		-> igmp_resp_class :: IPClassifier(ip proto igmp, ip proto udp)
+		-> arpq
+		-> [0]output;
+		
+	igmp_resp_class[1]
+	    -> [1]output;
+
+	igmp_class[1]
+		// Misc multicast
+		-> Discard;
 	
 	// Incoming Packets
 	input

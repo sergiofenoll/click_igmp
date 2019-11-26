@@ -89,6 +89,7 @@ void IGMPResponder::run_timer(Timer* t) {
 
 void IGMPResponder::push(int, Packet* p) {
     // Accepts Query messages and starts appropriate timer if necessary.
+    // Also accepts UDP messages and lets them through if appropriate.
     /* 
         TODO:
              - Calculate timer from max_resp_code 
@@ -98,46 +99,60 @@ void IGMPResponder::push(int, Packet* p) {
     WritablePacket* wp     = p->uniqueify();
     click_ip* iph          = wp->ip_header();
     IP_options* ipo        = (IP_options*) (iph + 1);
-    igmp_memb_query* igmph =  (igmp_memb_query*) (ipo + 1);
-    
-    // General queries
-    // TODO: make this timed
-    Vector<igmp_group_record> records = Vector<igmp_group_record>();
-    if (igmph->igmp_group_address == 0 && igmph->igmp_num_sources == 0) {
-            // Only send response if state is non-empty
-            if (!_multicast_state.empty()) {
-                for (int i = 0; i < _multicast_state.size(); i++) {
+
+    if (iph->ip_p == 17) {
+        // UDP Packets
+        // Check if listening to multicast group, if yes, let packet through
+        for (int i = 0; i < _multicast_state.size(); i++) {
+            if (iph->ip_dst == _multicast_state[i]) {
+                output(0).push(p);
+                return;
+            }
+        }        
+    }
+    else if (iph->ip_p == 2) {
+        // IGMP Packets
+        igmp_memb_query* igmph =  (igmp_memb_query*) (ipo + 1);
+
+        // General queries
+        // TODO: make this timed
+        Vector<igmp_group_record> records = Vector<igmp_group_record>();
+        if (igmph->igmp_group_address == 0 && igmph->igmp_num_sources == 0) {
+                // Only send response if state is non-empty
+                if (!_multicast_state.empty()) {
+                    for (int i = 0; i < _multicast_state.size(); i++) {
+                        igmp_group_record record;
+                        record.igmp_record_type    = IGMP_MODE_IS_EXCLUDE;
+                        record.igmp_aux_data       = 0;
+                        record.igmp_num_sources    = 0; // 0 because sources aren't supported by this implementation
+                        record.igmp_multicast_addr = _multicast_state[i];
+                        records.push_back(record);
+                    }
+                }
+        }
+
+        // Group-specific queries
+        if (igmph->igmp_group_address > 0) {
+            
+            for (int i = 0; i < _multicast_state.size(); i++) {
+                
+                if (_multicast_state[i] == igmph->igmp_group_address) {
                     igmp_group_record record;
                     record.igmp_record_type    = IGMP_MODE_IS_EXCLUDE;
                     record.igmp_aux_data       = 0;
                     record.igmp_num_sources    = 0; // 0 because sources aren't supported by this implementation
                     record.igmp_multicast_addr = _multicast_state[i];
                     records.push_back(record);
+                    break;
                 }
             }
-    }
-
-    // Group-specific queries
-    if (igmph->igmp_group_address > 0) {
-        
-        for (int i = 0; i < _multicast_state.size(); i++) {
-            
-            if (_multicast_state[i] == igmph->igmp_group_address) {
-                igmp_group_record record;
-                record.igmp_record_type    = IGMP_MODE_IS_EXCLUDE;
-                record.igmp_aux_data       = 0;
-                record.igmp_num_sources    = 0; // 0 because sources aren't supported by this implementation
-                record.igmp_multicast_addr = _multicast_state[i];
-                records.push_back(record);
-                break;
-            }
         }
-    }
 
-    if (records.size() > 0) {
-        Packet* response = make_packet(records);
-        output(0).push(response);
-        _ctr++;
+        if (records.size() > 0) {
+            Packet* response = make_packet(records);
+            output(0).push(response);
+            _ctr++;
+        }
     }
 }
 

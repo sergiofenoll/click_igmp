@@ -6,7 +6,7 @@
 CLICK_DECLS
 
 IGMPQuerier::IGMPQuerier(): _timer(this), _ctr(1), _s_qrv(0) {
-    _multicast_state = Vector<IPAddress>();
+    _multicast_state = Vector<GroupState>();
 }
 IGMPQuerier::~IGMPQuerier() {}
 int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
@@ -24,7 +24,8 @@ int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
     return 0;
 }
 
-Packet* IGMPQuerier::make_packet() {
+Packet* IGMPQuerier::make_packet(IPAddress dst_addr = IPAddress("224.0.0.1")) {
+
     size_t packetsize = sizeof(click_ip) + sizeof(IP_options) + sizeof(igmp_memb_query);
     WritablePacket* p = Packet::make(packetsize);
     if (p == 0) {
@@ -32,7 +33,7 @@ Packet* IGMPQuerier::make_packet() {
         return nullptr;
     }
     memset(p->data(), 0, p->length());
-
+    
     // IP
     click_ip* iph = (click_ip*) p->data();
     iph->ip_v   = 4;
@@ -42,7 +43,7 @@ Packet* IGMPQuerier::make_packet() {
     iph->ip_ttl = 1;
     iph->ip_p   = 2;
     iph->ip_src = _src;
-    iph->ip_dst = IPAddress("224.0.0.1");
+    iph->ip_dst = dst_addr;
 
     // IP Option: Router Alert
     IP_options* ra = (IP_options*) (iph + 1);
@@ -57,7 +58,7 @@ Packet* IGMPQuerier::make_packet() {
     igmp_memb_query* igmph = (igmp_memb_query*) (ra + 1);
     igmph->igmp_type             = IGMP_TYPE_MEMBERSHIP_QUERY;
     igmph->igmp_max_resp_code    = 69;
-    igmph->igmp_group_address    = 0;
+    igmph->igmp_group_address    = dst_addr == IPAddress("224.0.0.1") ? IPAddress() : dst_addr;
     igmph->igmp_S_QRV            = _s_qrv;
     igmph->igmp_QQIC             = 125;
     igmph->igmp_num_sources      = 0;
@@ -100,15 +101,39 @@ void IGMPQuerier::push(int, Packet* p) {
                 // Handle state changes
                 if (record_type == IGMP_CHANGE_TO_EXCLUDE_MODE) {
 
-                    // Don't duplicate groups
+                    // TODO: Timer-based actions
+
+                    // Existing groups
+                    bool group_exists = false;
                     for (int i = 0; i < _multicast_state.size(); i++) {
-                        if (multicast_addr == _multicast_state[i].addr()) {
-                            return; 
+                        if (multicast_addr == _multicast_state[i].group_addr.addr()) {
+                            _multicast_state[i].count++;
+                            group_exists = true;
+                            break; 
+                        }
+                    }
+                    // New group
+                    if (!group_exists) {
+                        GroupState new_group = GroupState {multicast_addr, 1};
+                        _multicast_state.push_back(new_group);
+                    }
+                }
+                else if (record_type == IGMP_CHANGE_TO_INCLUDE_MODE) {
+                    // TODO: Implement this using timers
+                    // Decrement group counter, remove group if counter == 0
+                    // Respond with Group-Specific Query
+                    for (auto it = _multicast_state.begin(); it !=  _multicast_state.end(); it++) {
+                        if (it->group_addr == multicast_addr) {
+                            it->count--;
+                            if (it->count <= 0) {
+                                _multicast_state.erase(it);
+                                break;
+                            }
                         }
                     }
 
-                    // TODO: Timer-based actions
-                    _multicast_state.push_back(multicast_addr);
+                    Packet* p = make_packet(IPAddress(multicast_addr));
+                    output(0).push(p);
                 }
 
                 record++;
@@ -119,7 +144,7 @@ void IGMPQuerier::push(int, Packet* p) {
         // Check if interface is interested in this group
         // If yes, send to output
         for (int i = 0; i < _multicast_state.size(); i++) {
-            if (iph->ip_dst == _multicast_state[i]) {
+            if (iph->ip_dst == _multicast_state[i].group_addr) {
                 output(0).push(p);
                 return;
                 

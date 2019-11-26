@@ -6,6 +6,12 @@
 #include "IGMPHeaders.hh"
 
 
+struct GroupState {
+    IPAddress group_addr;
+    int count;
+};
+
+
 CLICK_DECLS
 
 class IGMPQuerier : public Element {
@@ -18,7 +24,7 @@ class IGMPQuerier : public Element {
         const char *processing() const {return PUSH;}
         int configure(Vector<String>&, ErrorHandler*);
         void run_timer(Timer*);
-        Packet* make_packet();
+        Packet* make_packet(IPAddress);
         void push(int, Packet*);
 
     private:
@@ -28,7 +34,7 @@ class IGMPQuerier : public Element {
         uint      _ctr;
         uint8_t   _s_qrv;
         IPAddress _src;
-        Vector<IPAddress> _multicast_state;
+        Vector<GroupState> _multicast_state;
 };
 
 
