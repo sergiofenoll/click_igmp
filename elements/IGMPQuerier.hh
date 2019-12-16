@@ -6,9 +6,17 @@
 #include "IGMPHeaders.hh"
 
 
+/*
+    IGMP Querier - Router side IGMP component.
+    Handles querying and forwarding of multicast UDP packets.
+    All time values should be in milliseconds.
+*/
+
+
 struct GroupState {
     IPAddress group_addr;
-    int count;
+    Timer* group_timer;
+    int filter_mode;
 };
 
 
@@ -16,6 +24,7 @@ CLICK_DECLS
 
 class IGMPQuerier : public Element {
     public:
+
         IGMPQuerier();
         ~IGMPQuerier();
 
@@ -29,14 +38,32 @@ class IGMPQuerier : public Element {
 
     private:
 
-        Timer     _timer;
-        uint      _interval = 5000;
+	struct GroupTimerData {
+            IGMPQuerier* querier;
+            IPAddress multicast_address;
+        };
+
+	struct LastMemberTimerData {
+	   IGMPQuerier* querier;
+	   IPAddress multicast_address;
+	   uint count;
+	};
+
+        static void handleGroupTimeout(Timer*, void*);
+	static void handleMemberLeave(Timer*, void*);
+
+        Timer     _query_timer;
+        uint      _query_interval = 5000;//125000;
+        uint      _query_resp_interval = 1000;//10000;
+        uint      _group_membership_interval;
+	uint      _max_resp_code = 10;
         uint      _ctr;
         uint8_t   _s_qrv;
         IPAddress _src;
         Vector<GroupState> _multicast_state;
 };
 
+int igmp_code_to_ms(uint8_t code);
 
 CLICK_ENDDECLS
 

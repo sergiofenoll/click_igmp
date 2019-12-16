@@ -47,9 +47,6 @@ elementclass IGMP {
 //	[2]: packets sent to the 192.168.3.0/24 network
 //  [3]: packets destined for the router itself
 
-// TODO:
-// 	- Add timed queries
-//  - Add leave response
 
 elementclass Router {
 	$server_address, $client1_address, $client2_address |
