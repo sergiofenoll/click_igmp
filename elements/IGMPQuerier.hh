@@ -53,17 +53,25 @@ class IGMPQuerier : public Element {
 	static void handleMemberLeave(Timer*, void*);
 
         Timer     _query_timer;
-        uint      _query_interval = 5000;//125000;
-        uint      _query_resp_interval = 1000;//10000;
+	uint      _startup_query_interval;
+	uint      _startup_query_count;
+        uint      _query_interval = 125000;
+        uint      _query_resp_interval = 10000;
+	uint      _last_memb_query_interval = 1000;
+	uint      _last_memb_query_count;
         uint      _group_membership_interval;
-	uint      _max_resp_code = 10;
+	uint      _max_resp_code_general_query;
+	uint      _max_resp_code_group_query;
         uint      _ctr;
         uint8_t   _s_qrv;
         IPAddress _src;
         Vector<GroupState> _multicast_state;
+	Vector<IPAddress> _leaving_state;
 };
 
 int igmp_code_to_ms(uint8_t code);
+
+int igmp_ms_to_code(uint ms);
 
 CLICK_ENDDECLS
 

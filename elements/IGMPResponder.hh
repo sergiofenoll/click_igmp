@@ -17,12 +17,14 @@ class IGMPResponder : public Element {
 	        IGMPResponder* responder;
 	        IPAddress group_addr;
 	    };
+
+		struct UnsolicitedTimerData {
+			IGMPResponder* responder;
+			uint state_change;
+			IPAddress group_addr;
+			uint count;
+		};
 	    
-	    struct LeavingState {
-            IPAddress group_addr;
-	        Packet* packet;
-	        int count;
-	    };
 
         const char *class_name() const {return "IGMPResponder";}
         const char *port_count() const {return "1/1";}
@@ -39,16 +41,18 @@ class IGMPResponder : public Element {
 
     private:
     
-        static void handleGroupLeave(Timer*, void*);
-	    igmp_group_record make_record(IPAddress, uint8_t);
-	    
-	    Timer    _response_timer;
-	    Packet*   _pending_response;
-        uint      _ctr;
+		static void handleUnsolicitedMessage(Timer*, void*);
+		igmp_group_record make_record(IPAddress, uint8_t);
+		
+		Timer     _response_timer;
+		Packet*   _pending_response;
+	    uint      _ctr;
         uint      _num_group_records;
         IPAddress _src;
+		uint      _unsolicited_report_interval;
+		uint      _last_qrv = 2;
         Vector<IPAddress> _multicast_state;
-        Vector<LeavingState> _leaving_state;
+        Vector<IPAddress> _leaving_state;
 };
 
 int igmp_code_to_ms2(uint8_t code);

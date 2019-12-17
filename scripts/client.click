@@ -15,7 +15,8 @@ elementclass Client {
 					224.0.0.0/8 2)
 		-> [1]output;
 	
-	rt[1]
+	rt[1]	
+		-> IPPrint
 		-> DropBroadcasts
 		-> ipgw :: IPGWOptions($address)
 		-> FixIPSrc($address)
@@ -33,8 +34,8 @@ elementclass Client {
 		-> igmp_class :: IPClassifier(ip proto igmp or ip proto udp, -)
 		-> igmp :: IGMPResponder($address)
 		-> igmp_resp_class :: IPClassifier(ip proto igmp, ip proto udp)
-		-> arpq
-		-> [0]output;
+		-> arpq;
+		//-> [0]output; (reduntant because of rt[1])
 		
 	igmp_resp_class[1]
 	    -> [1]output;

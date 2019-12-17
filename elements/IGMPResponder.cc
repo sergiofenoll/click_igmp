@@ -9,8 +9,13 @@ IGMPResponder::IGMPResponder(): _response_timer(this), _ctr(1), _num_group_recor
 IGMPResponder::~IGMPResponder() {}
 int IGMPResponder::configure(Vector<String>& conf, ErrorHandler* errh) {
 
-    if (Args(conf, this, errh).read_mp("SOURCE", _src).complete() < 0) return -1;
+    double uri = 1; // In seconds
+
+    if (Args(conf, this, errh).read_mp("SOURCE", _src)
+			      .read("URI", uri)
+			      .complete() < 0) return -1;
     
+    _unsolicited_report_interval = (uint) (uri * 1000);
     _response_timer.initialize(this);
 
     return 0;
@@ -84,11 +89,6 @@ igmp_group_record IGMPResponder::make_record(IPAddress addr, uint8_t type) {
 void IGMPResponder::push(int, Packet* p) {
     // Accepts Query messages and starts appropriate timer if necessary.
     // Also accepts UDP messages and lets them through if appropriate.
-    /* 
-        TODO:
-             - Calculate timer from max_resp_code 
-             - Start timer
-    */
 
     WritablePacket* wp     = p->uniqueify();
     click_ip* iph          = wp->ip_header();
@@ -107,11 +107,16 @@ void IGMPResponder::push(int, Packet* p) {
     else if (iph->ip_p == 2) {
         // IGMP Packets
         igmp_memb_query* igmph =  (igmp_memb_query*) (ipo + 1);
+	if (igmph->igmp_type == IGMP_TYPE_MEMBERSHIP_REPORT) {
+		return; // Ignore reports from the network
+	}
 
         // General queries
-        // TODO: make this timed
         Vector<igmp_group_record> records = Vector<igmp_group_record>();
         if (igmph->igmp_group_address == 0 && igmph->igmp_num_sources == 0) {
+
+		_last_qrv = igmph->igmp_S_QRV & IGMP_QRV_MASK;
+
                 // Only send response if state is non-empty
                 if (!_multicast_state.empty()) {
                     for (int i = 0; i < _multicast_state.size(); i++) {
@@ -127,8 +132,9 @@ void IGMPResponder::push(int, Packet* p) {
 
         // Group-specific queries
         if (igmph->igmp_group_address > 0) {
+
+	    _last_qrv = igmph->igmp_S_QRV & IGMP_QRV_MASK;
             
-            bool listening = false;
             for (int i = 0; i < _multicast_state.size(); i++) {
                 
                 if (_multicast_state[i] == igmph->igmp_group_address) {
@@ -138,33 +144,9 @@ void IGMPResponder::push(int, Packet* p) {
                     record.igmp_num_sources    = 0; // 0 because sources aren't supported by this implementation
                     record.igmp_multicast_addr = _multicast_state[i];
                     records.push_back(record);
-                    listening = true;
                     break;
                 }
-            }
-            
-            if (!listening) {
-                for (auto it = _leaving_state.begin(); it != _leaving_state.end(); it++) {
-                    if (it->group_addr == igmph->igmp_group_address) {
-                        if (it->count < 0) {
-                            it->count = (igmph->igmp_S_QRV & IGMP_QRV_MASK) - 1;
-                        } else if (it->count == 0) {
-                            _leaving_state.erase(it);
-                            break;
-                        }
-                        
-                        it->count--;
-                        LeaveTimerData* timerdata = new LeaveTimerData;
-                        timerdata->responder = this;
-                        timerdata->group_addr = it->group_addr;
-                        Timer* leave_timer = new Timer(&IGMPResponder::handleGroupLeave, timerdata);
-                        leave_timer->initialize(this);
-                        uint time_to_send = click_random(0, igmp_code_to_ms2(igmph->igmp_max_resp_code));
-                        leave_timer->schedule_after_msec(time_to_send);
-                    }
-               }
-            }
-            
+            }           
         }
 
         if (records.size() > 0 and !_response_timer.scheduled()) {
@@ -197,6 +179,18 @@ int IGMPResponder::handle_join(const String &conf, Element* e, void* thunk, Erro
     igmp_group_record r = elem->make_record(group_addr, IGMP_CHANGE_TO_EXCLUDE_MODE);
     Packet* p           = elem->make_packet(Vector<igmp_group_record>(1, r));
     elem->output(0).push(p);
+    elem->_ctr++;
+
+    if (elem->_last_qrv > 1) {
+	UnsolicitedTimerData* timerdata = new UnsolicitedTimerData;
+	timerdata->responder = elem;
+	timerdata->state_change = IGMP_CHANGE_TO_EXCLUDE_MODE;
+	timerdata->group_addr   = group_addr;
+	timerdata->count        = elem->_last_qrv - 1;
+	Timer* timer = new Timer(&IGMPResponder::handleUnsolicitedMessage, timerdata);
+	timer->initialize(elem);
+	timer->schedule_after_msec(click_random(0, elem->_unsolicited_report_interval));
+    }
 
     elem->_multicast_state.push_back(group_addr);
 
@@ -229,9 +223,20 @@ int IGMPResponder::handle_leave(const String &conf, Element* e, void* thunk, Err
     igmp_group_record r = elem->make_record(group_addr, IGMP_CHANGE_TO_INCLUDE_MODE);
     Packet* p           = elem->make_packet(Vector<igmp_group_record>(1, r));
     elem->output(0).push(p);
+    elem->_ctr++;
     
-    LeavingState l = LeavingState {group_addr, p, -1};
-    elem->_leaving_state.push_back(l);
+    elem->_leaving_state.push_back(group_addr);
+
+    if (elem->_last_qrv > 1) {
+	UnsolicitedTimerData* timerdata = new UnsolicitedTimerData;
+	timerdata->responder = elem;
+	timerdata->state_change = IGMP_CHANGE_TO_INCLUDE_MODE;
+	timerdata->group_addr   = group_addr;
+	timerdata->count        = elem->_last_qrv - 1;
+	Timer* timer = new Timer(&IGMPResponder::handleUnsolicitedMessage, timerdata);
+	timer->initialize(elem);
+	timer->schedule_after_msec(click_random(0, elem->_unsolicited_report_interval));
+    }
 
     return 0;
 }
@@ -245,16 +250,31 @@ void IGMPResponder::run_timer(Timer* timer) {
     // Send pending packet
     if (_pending_response) {
         output(0).push(_pending_response);
+	_ctr++;
         _pending_response = nullptr;
     }
 }
 
-void IGMPResponder::handleGroupLeave(Timer* timer, void* data) {
-    LeaveTimerData* timerdata = (LeaveTimerData*) data;
-    igmp_group_record r = timerdata->responder->make_record(timerdata->group_addr, IGMP_CHANGE_TO_INCLUDE_MODE);
-    Packet* p           = timerdata->responder->make_packet(Vector<igmp_group_record>(1, r));
-    timerdata->responder->output(0).push(p);
-    delete timer;
+void IGMPResponder::handleUnsolicitedMessage(Timer* timer, void* data) {
+     UnsolicitedTimerData* timerdata = (UnsolicitedTimerData*) data;
+     if (timerdata->count > 0) {
+	     timerdata->count--;
+	     igmp_group_record r = timerdata->responder->make_record(timerdata->group_addr, timerdata->state_change);
+	     Packet* p           = timerdata->responder->make_packet(Vector<igmp_group_record>(1, r));
+	     timerdata->responder->output(0).push(p);
+	     timerdata->responder->_ctr++;
+	     timer->schedule_after_msec(click_random(0, timerdata->responder->_unsolicited_report_interval));
+     } else {
+	if (timerdata->state_change == IGMP_CHANGE_TO_INCLUDE_MODE) {
+		for (auto it = timerdata->responder->_leaving_state.begin(); it != timerdata->responder->_leaving_state.end(); it++) {
+			if (*it == timerdata->group_addr) {
+				timerdata->responder->_leaving_state.erase(it);
+				break;
+			}
+		}
+	}
+     	delete timer;
+     }  
 }
 
 int igmp_code_to_ms2(uint8_t code) {
