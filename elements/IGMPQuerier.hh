@@ -22,6 +22,17 @@ struct GroupState {
 
 CLICK_DECLS
 
+/*
+    Configuration parameters:
+        SOURCE: Mandatory, IP of the router
+        RV: Robustness variable, default = 2
+        QI: Query Interval, default = 125s
+        QRI: Query Response Interval, default = 10s
+        LMQI: Last Member Query Time, default = 1s
+        SQI: Startup Query Interval, default = 1/4th of Query Interval
+        SQC: Startup Query Count, default = Robustness Variable
+        LMQC: Last Member Query Count, default = Robustness Variable
+*/
 class IGMPQuerier : public Element {
     public:
 

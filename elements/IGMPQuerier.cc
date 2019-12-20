@@ -8,6 +8,7 @@ CLICK_DECLS
 IGMPQuerier::IGMPQuerier(): _query_timer(this), _ctr(1), _s_qrv(0) {
     _multicast_state = Vector<GroupState>();
 }
+
 IGMPQuerier::~IGMPQuerier() {}
 int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
 
@@ -22,7 +23,7 @@ int IGMPQuerier::configure(Vector<String>& conf, ErrorHandler* errh) {
 
     if (Args(conf, this, errh).read_mp("SOURCE", _src)
 			      .read("RV", rv)
-    			      .read("QI", qi)
+    			   .read("QI", qi)
 			      .read("QRI", qri)
 			      .read("LMQI", lmqi)
 		 	      .read("SQI", sqi)
@@ -254,9 +255,10 @@ int igmp_code_to_ms(uint8_t code) {
 	return code * 100;
    }
    else {
-	uint8_t mant = (code & 0x10);
-	uint8_t exp  = (code >> 4) & 0x8;
-	return ((mant | 0x10) << (exp + 3)) * 100;
+	uint mant = (code & 0xf);
+	uint exp  = (code & 0x70) >> 4;
+	uint code = ((mant | 0x10) << (exp + 3)) * 100;
+	return code;
    }
 }
 
@@ -267,13 +269,14 @@ int igmp_ms_to_code(uint ms) {
 	}
 
 	for (uint exp = 0; exp < 8; exp++) {
-		uint mant = (ms / 1000) >> (exp + 3);
-		if (mant < 8) {
-			return 0xf0 | (exp << 4) | mant;
+		uint mant = (ms / 100) >> (exp + 3);
+		if (mant < 0x1f) {
+			return 0x80 | ((exp & 0x7) << 4) | (mant & 0xf);
 		}
-	}	
+	}
 
 }
+
 
 CLICK_ENDDECLS
 EXPORT_ELEMENT(IGMPQuerier)
