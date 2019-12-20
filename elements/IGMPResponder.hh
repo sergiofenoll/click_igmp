@@ -45,7 +45,8 @@ class IGMPResponder : public Element {
 		igmp_group_record make_record(IPAddress, uint8_t);
 		
 		Timer     _response_timer;
-		Packet*   _pending_response;
+		// Packet*   _pending_response;
+        Vector<igmp_group_record> _pending_response_records;
 	    uint      _ctr;
         uint      _num_group_records;
         IPAddress _src;

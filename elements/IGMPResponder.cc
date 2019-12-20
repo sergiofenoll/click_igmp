@@ -153,8 +153,17 @@ void IGMPResponder::push(int, Packet* p) {
             Packet* response = make_packet(records);
             uint time_to_send = click_random(0, igmp_code_to_ms2(igmph->igmp_max_resp_code));
             _response_timer.schedule_after_msec(time_to_send);
-            _pending_response = response;
-            _ctr++;
+            for (auto record : records) {
+                bool already_pending = false;
+                for (auto pending_record : _pending_response_records) {
+                    if (record.igmp_multicast_addr == pending_record.igmp_multicast_addr) {
+                        already_pending = true;
+                    }
+                }
+                if (!already_pending) {
+                    _pending_response_records.push_back(record);
+                }
+            }
         }
     }
 }
@@ -226,6 +235,12 @@ int IGMPResponder::handle_leave(const String &conf, Element* e, void* thunk, Err
     elem->_ctr++;
     
     elem->_leaving_state.push_back(group_addr);
+    for (auto it = elem->_pending_response_records.begin(); it != elem->_pending_response_records.end(); it++) {
+        if (IPAddress(it->igmp_multicast_addr) == group_addr) {
+            elem->_pending_response_records.erase(it);
+            break;
+        }
+    }
 
     if (elem->_last_qrv > 1) {
 	UnsolicitedTimerData* timerdata = new UnsolicitedTimerData;
@@ -248,10 +263,11 @@ void IGMPResponder::add_handlers() {
 
 void IGMPResponder::run_timer(Timer* timer) {
     // Send pending packet
-    if (_pending_response) {
-        output(0).push(_pending_response);
-	_ctr++;
-        _pending_response = nullptr;
+    if (_pending_response_records.size()) {
+        Packet* p = make_packet(_pending_response_records);
+        output(0).push(p);
+	    _ctr++;
+        _pending_response_records.clear();
     }
 }
 
