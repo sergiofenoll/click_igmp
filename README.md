@@ -26,7 +26,7 @@ Het Client-side IGMP element. Accepteert de volgende optionele parameters:
 
 * URI -  Unsolicited Report Interval (in seconden)
 
-## IGMPQuerier
+### IGMPQuerier
 Het Router-side IGMP element. Accepteert de volgende optionele parameters:
 
 * RV - Robustness Variable
